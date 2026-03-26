@@ -86,19 +86,33 @@ def _ts():
 # Integración con tablas reales: campaigns + gestiones
 # ============================================================
 
-def campaign_exists(conn, nombre_campana):
+def campaign_exists(conn, id_tipo_fuente, periodo):
     """
-    Busca la campaña por nombre en la tabla campaigns.
+    Busca la campana por codigo exacto (nuestro formato).
+    Si no encuentra, busca por nombre que contenga el medio de pago y el periodo YYMM.
+    Esto cubre campanas creadas manualmente con formato distinto.
     Retorna: campaign_id (int) si existe, None si no existe.
     """
+    codigo = _construir_codigo(id_tipo_fuente, periodo)
+    yymm = periodo[2:]  # "202603" -> "2603"
+    nombre_pago = MEDIO_PAGO.get(id_tipo_fuente, "")
+
+    # Buscar por codigo exacto (nuestro formato)
+    row = execute_one(conn, "SELECT id FROM campaigns WHERE codigo = %s", (codigo,))
+    if row:
+        logger.debug("Campana encontrada por codigo: id=%s codigo=%s", row["id"], codigo)
+        return row["id"]
+
+    # Buscar por nombre (formato viejo, ej: "SC-Preventivo VISA Febrero - L2603")
     row = execute_one(
         conn,
-        "SELECT id FROM campaigns WHERE nombre = %s",
-        (nombre_campana,),
+        "SELECT id FROM campaigns WHERE LOWER(nombre) LIKE %s AND codigo LIKE %s",
+        (f"%{nombre_pago}%", f"%-{yymm}"),
     )
     if row:
-        logger.debug("Campaña encontrada: id=%s nombre=%s", row["id"], nombre_campana)
+        logger.info("Campana existente encontrada por nombre (formato previo): id=%s", row["id"])
         return row["id"]
+
     return None
 
 
@@ -205,7 +219,7 @@ def procesar_grupo(conn, id_tipo_fuente, periodo, items):
         len(items),
     )
 
-    campaign_id = campaign_exists(conn, campaign_name)
+    campaign_id = campaign_exists(conn, id_tipo_fuente, periodo)
 
     if campaign_id is None:
         logger.info("Campaña NO existe → creando: %s", campaign_name)

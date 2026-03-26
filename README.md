@@ -1,32 +1,38 @@
 # rechazos-preventivos-cronjob
 
-Script Python que corre diariamente para automatizar campañas preventivas de rechazos en cobranzas.
+Script Python que corre diariamente para automatizar campanas preventivas de rechazos en cobranzas.
 
-## Qué hace
+## Que hace
 
-1. Consulta rechazos desde la DB por cada medio de pago (visa, master, oca, creditel, cabal, creditosdirectos, passcard)
-2. Agrupa los resultados por periodo `YYYYMM`
-3. Crea o reutiliza la campaña mensual correspondiente
-4. Inserta las gestiones (rechazos) en la campaña
-5. Marca los rechazos como procesados para evitar duplicados
-6. Notifica a Discord (creada / actualizada / error)
+Por cada medio de pago (visa, master, oca, creditel, cabal, creditosdirectos, passcard):
+
+1. Consulta rechazos desde la DB (query base intocable)
+2. Filtra los que ya fueron procesados (evita duplicados)
+3. Si quedan rechazos nuevos:
+   - Busca la campana del periodo actual
+   - Si no existe: la crea e inserta gestiones
+   - Si ya existe: inserta solo las gestiones nuevas
+4. Marca los rechazos como procesados
+5. Notifica a Discord (CREADA / ACTUALIZADA / ERROR)
 
 ## Estructura
 
 ```
 src/
-  config.py               # Carga .env e inicializa logging
-  db.py                   # Conexión pymysql + helpers
-  queries.py              # SQL: query base, tabla auxiliar, inserts
-  processed_repository.py # Marcar rechazos procesados (batch)
-  campaign_service.py     # Lógica de campañas + stubs de integración
-  discord_service.py      # Notificaciones Discord via webhook
-  main.py                 # Orquestador principal
-.env                      # Variables de entorno (no commitear)
+  config.py               - Carga .env e inicializa logging
+  db.py                   - Conexion pymysql + helpers
+  queries.py              - SQL: query base, tabla auxiliar, inserts
+  processed_repository.py - Filtrar y marcar rechazos procesados
+  campaign_service.py     - Logica de campanas (buscar, crear, insertar gestiones)
+  discord_service.py      - Notificaciones Discord via webhook
+  main.py                 - Orquestador principal
+tests/
+  test_unit.py            - Tests unitarios (sin dependencias externas)
+.env                      - Variables de entorno (no commitear)
 requirements.txt
 ```
 
-## Cómo correr
+## Como correr
 
 ```bash
 # Instalar dependencias
@@ -36,89 +42,107 @@ pip install -r requirements.txt
 python src/main.py
 ```
 
+## Tests
+
+No requieren conexion a DB ni Discord. Solo stdlib de Python.
+
+```bash
+# Desde la raiz del proyecto
+python tests/test_unit.py
+
+# Con detalle de cada test
+python tests/test_unit.py -v
+```
+
+Casos cubiertos:
+- Formato exacto de nombre de campana para los 7 medios de pago
+- Formato exacto de codigo (SCP10VI-2603, SCP10PC-2603, etc.)
+- Agrupacion por periodo YYYYMM
+- Filtrado de rechazos ya procesados (parcial / total / ninguno)
+- Busqueda de campana por codigo exacto
+- Busqueda de campana por nombre (formato viejo, fallback LIKE)
+- Creacion de campana cuando no existe
+- Actualizacion de campana existente (formato nuevo y viejo)
+- No inserta gestiones si no hay items
+
 ## Cron (Linux/Mac)
 
 ```cron
-0 8 * * * /usr/bin/python3 /ruta/absoluta/src/main.py >> /var/log/rechazos-preventivos.log 2>&1
+0 8 * * * python3 /home/asiste8/rechazos-preventivos-cronjob/src/main.py >> /home/asiste8/rechazos-preventivos-cronjob/cronjob.log 2>&1
+```
+
+Ver logs:
+```bash
+tail -50 /home/asiste8/rechazos-preventivos-cronjob/cronjob.log
 ```
 
 ## Variables de entorno (.env)
 
-| Variable             | Descripción                        | Ejemplo                  |
-|----------------------|------------------------------------|--------------------------|
-| `DB_HOST`            | Host de la base de datos           | `localhost`              |
-| `DB_PORT`            | Puerto MySQL                       | `3306`                   |
-| `DB_NAME`            | Nombre de la base de datos         | `cobranzas`              |
-| `DB_USER`            | Usuario MySQL                      | `root`                   |
-| `DB_PASSWORD`        | Contraseña MySQL                   | `secret`                 |
-| `DISCORD_WEBHOOK_URL`| URL del webhook de Discord         | `https://discord.com/...`|
-| `LOG_LEVEL`          | Nivel de logging                   | `INFO` / `DEBUG`         |
+| Variable              | Descripcion                        | Ejemplo                   |
+|-----------------------|------------------------------------|---------------------------|
+| `DB_HOST`             | Host de la base de datos           | `localhost`               |
+| `DB_PORT`             | Puerto MySQL                       | `3306`                    |
+| `DB_NAME`             | Nombre de la base de datos         | `asiste8_globalas_...`    |
+| `DB_USER`             | Usuario MySQL                      | `asiste8_system`          |
+| `DB_PASSWORD`         | Contrasena MySQL                   | `...`                     |
+| `DISCORD_WEBHOOK_URL` | URL del webhook de Discord         | `https://discord.com/...` |
+| `LOG_LEVEL`           | Nivel de logging                   | `INFO` / `DEBUG`          |
 
 ## SQL tabla auxiliar
 
-Crear manualmente si no existe (el script también la crea al iniciar):
+Se crea automaticamente al iniciar. Para recrearla desde cero:
 
 ```sql
-CREATE TABLE IF NOT EXISTS rechazos_preventivos_procesados (
+DROP TABLE IF EXISTS rechazos_preventivos_procesados;
+
+CREATE TABLE rechazos_preventivos_procesados (
     id INT AUTO_INCREMENT PRIMARY KEY,
     id_pago INT NOT NULL,
-    id_factura INT NOT NULL,
+    id_contacto INT NOT NULL,
     id_servicio INT NOT NULL,
     id_tipo_fuente INT NOT NULL,
     periodo CHAR(6) NOT NULL,
     campaign_name VARCHAR(100) NOT NULL,
     fecha_procesado DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_rechazo (id_pago, id_factura, id_servicio)
+    UNIQUE KEY uq_rechazo (id_pago, id_contacto, id_servicio)
 );
 ```
 
 ## Medios de pago
 
-| id_tipo_fuente | Nombre             |
-|----------------|--------------------|
-| 13             | visa               |
-| 14             | master             |
-| 15             | oca                |
-| 16             | creditel           |
-| 17             | cabal              |
-| 18             | creditosdirectos   |
-| 21             | passcard           |
+| id_tipo_fuente | Nombre             | Codigo        |
+|----------------|--------------------|---------------|
+| 13             | visa               | SCP10VI-YYMM  |
+| 14             | master             | SCP10MA-YYMM  |
+| 15             | oca                | SCP10OCA-YYMM |
+| 16             | creditel           | SCP10CR-YYMM  |
+| 17             | cabal              | SCP10CAB-YYMM |
+| 18             | creditosdirectos   | SCP10CD-YYMM  |
+| 21             | passcard           | SCP10PC-YYMM  |
 
-## TODOs de integración real
+## Logica anti-duplicados
 
-Estos 3 stubs en `src/campaign_service.py` necesitan implementación con tus tablas reales:
+Antes de insertar gestiones, el script verifica en `rechazos_preventivos_procesados`
+que combinacion de (id_pago, id_servicio) ya fue procesada para ese tipo_fuente y periodo.
+Solo inserta los nuevos.
 
-### 1. `campaign_exists(conn, nombre_campana)`
-Verificar si la campaña ya existe. Debe retornar el `id` de la campaña o `None`.
+Busqueda de campana existente (en orden):
+1. Por `codigo` exacto (SCP10VI-2603) - campanas creadas por este script
+2. Por `nombre` LIKE + codigo LIKE - campanas creadas manualmente con formato distinto
 
+## Ajustes pendientes en campaign_service.py
+
+### BROKER_ID (linea 35)
+Actualmente todos los medios usan broker 956.
+Si cada medio tiene un broker distinto, actualizar el mapping:
 ```python
-def campaign_exists(conn, nombre_campana):
-    from db import execute_one
-    row = execute_one(conn, "SELECT id FROM campanas WHERE nombre = %s", (nombre_campana,))
-    return row["id"] if row else None
+BROKER_ID = {
+    13: 956,   # visa
+    14: 956,   # master
+    ...
+}
 ```
 
-### 2. `create_campaign(conn, nombre_campana)`
-Insertar la campaña y retornar su `id`.
-
-```python
-def create_campaign(conn, nombre_campana):
-    from db import execute_query, execute_one, commit
-    execute_query(conn, "INSERT INTO campanas (nombre, fecha_creacion) VALUES (%s, NOW())", (nombre_campana,))
-    commit(conn)
-    row = execute_one(conn, "SELECT LAST_INSERT_ID() as id")
-    return row["id"]
-```
-
-### 3. `insert_gestiones(conn, campaign_id, items)`
-Insertar los rechazos como gestiones asociadas a la campaña.
-
-```python
-def insert_gestiones(conn, campaign_id, items):
-    from db import execute_many, commit
-    data = [(campaign_id, row["id_pago"], row["id_servicio"]) for row in items]
-    execute_many(conn, "INSERT INTO gestiones (id_campana, id_pago, id_servicio) VALUES (%s, %s, %s)", data)
-    commit(conn)
-```
-
-Adaptá los nombres de tabla y columnas a tu schema real.
+### id_resultado en gestiones (linea 183)
+Actualmente se inserta con `id_resultado = 11`.
+Cambiar si corresponde otro valor para rechazos preventivos.
