@@ -1,12 +1,12 @@
 # rechazos-preventivos-cronjob
 
-Script Python que corre diariamente para automatizar campanas preventivas de rechazos en cobranzas.
+Script Python que corre diariamente para automatizar campañas preventivas de rechazos en cobranzas.
 
 ## Que hace
 
 Por cada medio de pago (visa, master, oca, creditel, cabal, creditosdirectos, passcard):
 
-1. Consulta rechazos desde la DB (query base intocable)
+1. Consulta rechazos desde la DB 
 2. Filtra los que ya fueron procesados (evita duplicados)
 3. Si quedan rechazos nuevos:
    - Busca la campana del periodo actual
