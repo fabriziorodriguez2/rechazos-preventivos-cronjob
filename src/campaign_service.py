@@ -161,8 +161,8 @@ def insert_gestiones(conn, campaign_id, items, id_tipo_fuente):
       id_tipo       → 2
       id_campaign   → campaign_id
       id_broker     → BROKER_ID[id_tipo_fuente]
-      id_contacto   → contactos.id  (campo "id" del resultado de la query)
-      id_resultado  → 11
+      id_contacto   → servicios.id_contacto  (del SELECT *)
+      id_resultado  → 0
       notas         → ''
       timestamp     → YYYYMMDDHHMMSS
       id_tel_fijo1  → contactos.id_tel_fijo1
@@ -179,8 +179,8 @@ def insert_gestiones(conn, campaign_id, items, id_tipo_fuente):
             2,              # id_tipo
             campaign_id,    # id_campaign
             broker_id,      # id_broker
-            row["id"],      # id_contacto  ← contactos.id
-            11,             # id_resultado (nuevo/pendiente)
+            row["id_contacto"],  # id_contacto  ← servicios.id_contacto
+            0,              # id_resultado (nuevo/sin gestionar)
             "",             # notas
             ts,             # timestamp
             row["id_tel_fijo1"],  # id_tel_fijo1 ← GROUP BY de la query
