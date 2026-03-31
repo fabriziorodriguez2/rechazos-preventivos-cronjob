@@ -45,13 +45,14 @@ BROKER_ID = {
 
 def construir_nombre_campana(id_tipo_fuente, periodo):
     """
-    Formato: sc-preventivo10[nombre_pago]-L[YYYYMM]
-    Ejemplo: sc-preventivo10visa-L202603
+    Formato: SC-Preventivo 10 [NOMBRE_PAGO]- L[YYMM]
+    Ejemplo: SC-Preventivo 10 CREDITEL- L2603
     """
     nombre_pago = MEDIO_PAGO.get(id_tipo_fuente)
     if not nombre_pago:
         raise ValueError(f"id_tipo_fuente desconocido: {id_tipo_fuente}")
-    return f"sc-preventivo10{nombre_pago}-L{periodo}"
+    yymm = periodo[2:]  # "202603" → "2603"
+    return f"SC-Preventivo 10 {nombre_pago.upper()}- L{yymm}"
 
 
 def _construir_codigo(id_tipo_fuente, periodo):
@@ -149,7 +150,15 @@ def create_campaign(conn, nombre_campana, id_tipo_fuente, periodo):
 
     row = execute_one(conn, "SELECT LAST_INSERT_ID() AS id")
     campaign_id = row["id"]
-    logger.info("Campaña creada: id=%s codigo=%s nombre=%s", campaign_id, codigo, nombre_campana)
+
+    execute_query(
+        conn,
+        "INSERT INTO campaign_brokers (id_campaign, id_user) VALUES (%s, %s)",
+        (campaign_id, broker_id),
+    )
+    commit(conn)
+
+    logger.info("Campaña creada: id=%s codigo=%s nombre=%s broker_id=%s", campaign_id, codigo, nombre_campana, broker_id)
     return campaign_id
 
 

@@ -1,6 +1,6 @@
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import DISCORD_WEBHOOK_URL
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def notify_summary(stats):
         nuevos    - nuevos procesados en esta ejecucion
         accion    - CREADA / ACTUALIZADA / SIN NUEVOS / SIN DATOS / ERROR
     """
-    fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
+    fecha = (datetime.now() + timedelta(hours=4)).strftime("%d/%m/%Y %H:%M")
 
     col_medio = 20
     col_rechazos = 9
@@ -54,8 +54,11 @@ def notify_summary(stats):
 
     table = "\n".join([header, sep] + filas + [sep, total_line])
 
-    # Color segun resultado: verde si hubo nuevos, gris si todo ya estaba procesado
-    color = 3066993 if total_nuevos > 0 else 9807270
+    if total_nuevos == 0:
+        logger.info("Sin rechazos nuevos, notificacion Discord omitida.")
+        return
+
+    color = 3066993  # verde
 
     payload = {
         "embeds": [
